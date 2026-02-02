@@ -1,0 +1,26 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: chaos-backend-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chaos-backend
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        # CPU UTILIZATION THRESHOLD: 60%
+        # Chosen because:
+        # 1. It provides a safety buffer before hitting the 100% limit (500m).
+        # 2. It allows the HPA to react BEFORE the pod becomes completely unresponsive.
+        # INTERACTION WITH /load/cpu:
+        # The /load/cpu endpoint spins a busy loop consuming 100% of a core.
+        # This spikes utilization >> 60%, forcing HPA to calculate: current_replicas * (current_usage / target_usage).
+        # Result: Replicas scale UP to share the load (if load was distributed) or just to add capacity.
+        averageUtilization: 60

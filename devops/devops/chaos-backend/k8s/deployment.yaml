@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-backend
+  labels:
+    app: chaos-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: chaos-backend
+  template:
+    metadata:
+      labels:
+        app: chaos-backend
+    spec:
+      containers:
+      - name: chaos-backend
+        image: chaos-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: CPU_LOAD_DURATION
+          value: "5"
+        - name: MEMORY_MB
+          value: "50"
+        - name: RANDOM_CRASH_ENABLED
+          value: "false"
+        - name: MAX_MEMORY_MB_READY
+          value: "400" # Match the memory limit - 20% approximately
+        - name: MAX_LATENCY_MS
+          value: "500" # Latency threshold for readiness
+        resources:
+          # RATIONALE FOR REQUESTS:
+          # 200m CPU / 256Mi Memory guarantees enough baseline for the FastAPI app + basic overhead.
+          # This prevents the pod from being starved on a busy node.
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          # RATIONALE FOR LIMITS:
+          # 500m CPU / 512Mi Memory ensures a single runaway pod cannot consume all node resources.
+          # This is critical for the OOMKill demo (memory leak > 512Mi -> Kill).
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          # Liveness checks if the binary is running and not deadlocked.
+          # We check /health which is a simple 200 OK.
+          # If this fails, Kubelet RESTARTS the container.
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          # Readiness checks if the app can ACTUALLY serve traffic.
+          # We check /ready which fails on high load/latency.
+          # If this fails, Kubelet REMOVES the pod from the Service LoadBalancer.
+          # PREFERRED over Liveness for degradation because we want to shed load, not restart immediately.
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5 # Check often to react quickly to load
